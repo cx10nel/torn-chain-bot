@@ -44,7 +44,6 @@ async def startchain(ctx):
             user_id = interaction.user.id
             if user_id not in chain:
                 chain.append(user_id)
-                # Update embed with participants
                 mentions = [interaction.guild.get_member(uid).mention for uid in chain]
                 embed = discord.Embed(
                     title="Torn Chain - Join Phase",
@@ -65,7 +64,6 @@ async def startchain(ctx):
                 chain.remove(user_id)
                 if idx <= current_index and current_index > 0:
                     current_index -= 1
-                # Update embed
                 mentions = [interaction.guild.get_member(uid).mention for uid in chain]
                 embed = discord.Embed(
                     title="Torn Chain - Join Phase",
@@ -87,15 +85,22 @@ async def startchain(ctx):
             if user_id != chain[current_index]:
                 await interaction.response.send_message("It's not your turn yet.", ephemeral=True)
                 return
-            # Rotate to next user
             current_index = (current_index + 1) % len(chain)
             next_user = interaction.guild.get_member(chain[current_index])
             await interaction.response.send_message(f"{next_user.mention}, it's your turn now!", ephemeral=False)
             await interaction.channel.send(f"{next_user.mention} 🔔 It's your turn!")
 
-    # Send initial message with buttons and store its ID reliably
+    # Send the buttons message
     message = await ctx.send(embed=embed, view=ChainView())
     chain_message_id = message.id
+
+    # Pin the buttons message so it stays at the top
+    try:
+        await message.pin()
+    except discord.Forbidden:
+        await ctx.send("I don't have permission to pin messages. Please allow me to manage pins.", delete_after=10)
+    except discord.HTTPException as e:
+        await ctx.send(f"Failed to pin message: {e}", delete_after=10)
 
 @startchain.error
 async def startchain_error(ctx, error):
@@ -129,28 +134,30 @@ async def stopchain(ctx):
     chain = []
     current_index = 0
     chain_active = False
-    # Remove the button message
+    # Delete and unpin the buttons message
     if chain_message_id:
         try:
             msg = await ctx.channel.fetch_message(chain_message_id)
+            await msg.unpin()
             await msg.delete()
         except:
             pass
     chain_message_id = None
     await ctx.send("Chain stopped by Leader.")
 
-# ---------- Clear bot messages without removing buttons ----------
+# ---------- Clear bot messages including leader commands ----------
 @bot.command()
 @commands.check(is_leader)
 async def clearchain(ctx, limit: int = 50):
-    """Clear bot messages but keep the chain buttons message"""
+    """Clear bot messages including leader command messages, but keep the buttons message pinned"""
     global chain_message_id
 
-    def is_bot_msg(m):
+    def is_deletable(m):
+        # Delete all bot messages except the pinned buttons message
         return m.author == bot.user and m.id != chain_message_id
 
     try:
-        deleted = await ctx.channel.purge(limit=limit, check=is_bot_msg)
+        deleted = await ctx.channel.purge(limit=limit, check=is_deletable)
         await ctx.send(f"Cleared {len(deleted)} bot messages (buttons kept).", delete_after=5)
     except Exception as e:
         await ctx.send(f"Error while clearing messages: {e}", delete_after=5)
