@@ -2,164 +2,76 @@ import os
 import discord
 from discord.ext import commands
 
+# Intents setup
 intents = discord.Intents.default()
-intents.members = True
+intents.members = True  # Needed to track server members
+intents.message_content = True  # Optional: only needed if you want typed commands
 
+# Bot prefix (for typed commands, optional)
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# Data structure to store the chain
 chain = []
-chain_message_id = None
-chain_active = False
-bot_messages = []
 
+# Admin check
+def is_admin(ctx):
+    return ctx.author.guild_permissions.administrator
 
-def is_admin(member):
-    return member.guild_permissions.administrator
-
-
-class ChainView(discord.ui.View):
-    def __init__(self, active=True):
-        super().__init__(timeout=None)
-        self.active = active
-
-        for item in self.children:
-            item.disabled = not active
-
-    @discord.ui.button(label="Participating", style=discord.ButtonStyle.green)
-    async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not chain_active:
-            await interaction.response.send_message(
-                "The chain is not active.", ephemeral=True
-            )
-            return
-
-        if interaction.user in chain:
-            await interaction.response.send_message(
-                "You're already in the chain.", ephemeral=True
-            )
-            return
-
-        chain.append(interaction.user)
-        await update_chain(interaction)
-        await interaction.response.send_message("Added to the chain.", ephemeral=True)
-
-    @discord.ui.button(label="Leave", style=discord.ButtonStyle.red)
-    async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user not in chain:
-            await interaction.response.send_message(
-                "You're not in the chain.", ephemeral=True
-            )
-            return
-
-        chain.remove(interaction.user)
-        await update_chain(interaction)
-        await interaction.response.send_message("Removed from the chain.", ephemeral=True)
-
-    @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple)
-    async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not chain_active:
-            return
-
-        if not chain or interaction.user != chain[0]:
-            await interaction.response.send_message(
-                "It's not your turn.", ephemeral=True
-            )
-            return
-
-        finished = chain.pop(0)
-        chain.append(finished)
-
-        await update_chain(interaction, ping_next=True)
-        await interaction.response.send_message("Turn complete!", ephemeral=True)
-
-
-async def update_chain(interaction, ping_next=False):
-    global chain_message_id
-
-    channel = interaction.channel
-
-    if not chain:
-        description = "*No one is currently participating.*"
-    else:
-        description = ""
-        for i, user in enumerate(chain):
-            if i == 0:
-                description += f"**➡️ {user.mention} (Your turn)**\n"
-            else:
-                description += f"{i+1}. {user.mention}\n"
-
-    embed = discord.Embed(
-        title="🔗 Torn Chain Organizer",
-        description=description,
-        color=discord.Color.red()
-    )
-
-    view = ChainView(active=chain_active)
-
-    if chain_message_id:
-        msg = await channel.fetch_message(chain_message_id)
-        await msg.edit(embed=embed, view=view)
-    else:
-        msg = await channel.send(embed=embed, view=view)
-        chain_message_id = msg.id
-        bot_messages.append(msg.id)
-
-    if ping_next and chain:
-        ping = await channel.send(f"🔥 {chain[0].mention}, it's your turn!")
-        bot_messages.append(ping.id)
-
-
+# Start chain command
 @bot.command()
-@commands.has_permissions(administrator=True)
+@commands.check(is_admin)
 async def startchain(ctx):
-    global chain, chain_message_id, chain_active
-
-    chain.clear()
-    chain_message_id = None
-    chain_active = True
-
-    msg = await ctx.send(
-        embed=discord.Embed(
-            title="🔗 Torn Chain Organizer",
-            description="Click **Participating** to join the chain.",
-            color=discord.Color.red()
-        ),
-        view=ChainView(active=True)
+    global chain
+    chain = []
+    embed = discord.Embed(
+        title="Torn Chain Started",
+        description="Click ✅ to participate!",
+        color=0x00ff00
     )
+    message = await ctx.send(embed=embed)
+    await message.add_reaction("✅")  # Users click to join
 
-    chain_message_id = msg.id
-    bot_messages.append(msg.id)
-
-
+# Done command (user has taken their hit)
 @bot.command()
-@commands.has_permissions(administrator=True)
+async def done(ctx):
+    global chain
+    if ctx.author.id in chain:
+        chain.append(chain.pop(0))  # Rotate
+        next_user_id = chain[0]
+        user = ctx.guild.get_member(next_user_id)
+        await ctx.send(f"{user.mention}, it's your turn!")
+    else:
+        await ctx.send("You're not in the chain!")
+
+# Leave command
+@bot.command()
+async def leave(ctx):
+    global chain
+    if ctx.author.id in chain:
+        chain.remove(ctx.author.id)
+        await ctx.send(f"{ctx.author.mention} left the chain.")
+    else:
+        await ctx.send("You're not in the chain!")
+
+# Stop chain (admin only)
+@bot.command()
+@commands.check(is_admin)
 async def stopchain(ctx):
-    global chain_active
+    global chain
+    chain = []
+    await ctx.send("Chain stopped by admin.")
 
-    chain_active = False
-    await update_chain(ctx)
-    await ctx.send("🛑 The chain has been stopped.")
-
-
+# Clear previous messages (admin only)
 @bot.command()
-@commands.has_permissions(administrator=True)
-async def clearchain(ctx):
-    global chain, chain_message_id, bot_messages, chain_active
+@commands.check(is_admin)
+async def clearchain(ctx, limit: int = 10):
+    await ctx.channel.purge(limit=limit)
+    await ctx.send("Previous messages cleared.", delete_after=5)
 
-    for msg_id in bot_messages:
-        try:
-            msg = await ctx.channel.fetch_message(msg_id)
-            await msg.delete()
-        except:
-            pass
+# Event: on_ready
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
 
-    chain.clear()
-    chain_message_id = None
-    bot_messages.clear()
-    chain_active = False
-
-    await ctx.send("🧹 Chain messages cleared.")
-
-
-import os
+# Run the bot using environment variable
 bot.run(os.getenv("DISCORD_TOKEN"))
