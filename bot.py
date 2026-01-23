@@ -161,5 +161,5 @@ async def clearchain(ctx):
     await ctx.send("🧹 Chain messages cleared.")
 
 
-bot.run("YOUR_REAL_BOT_TOKEN_HERE")
+import os
 bot.run(os.getenv("DISCORD_TOKEN"))
