@@ -93,6 +93,7 @@ async def startchain(ctx):
             await interaction.response.send_message(f"{next_user.mention}, it's your turn now!", ephemeral=False)
             await interaction.channel.send(f"{next_user.mention} 🔔 It's your turn!")
 
+    # Send initial message with buttons and store its ID reliably
     message = await ctx.send(embed=embed, view=ChainView())
     chain_message_id = message.id
 
@@ -144,12 +145,15 @@ async def stopchain(ctx):
 async def clearchain(ctx, limit: int = 50):
     """Clear bot messages but keep the chain buttons message"""
     global chain_message_id
+
     def is_bot_msg(m):
-        # Only delete bot messages that are NOT the chain message
         return m.author == bot.user and m.id != chain_message_id
 
-    deleted = await ctx.channel.purge(limit=limit, check=is_bot_msg)
-    await ctx.send(f"Cleared {len(deleted)} bot messages (buttons kept).", delete_after=5)
+    try:
+        deleted = await ctx.channel.purge(limit=limit, check=is_bot_msg)
+        await ctx.send(f"Cleared {len(deleted)} bot messages (buttons kept).", delete_after=5)
+    except Exception as e:
+        await ctx.send(f"Error while clearing messages: {e}", delete_after=5)
 
 # ---------- Show current queue ----------
 @bot.command()
