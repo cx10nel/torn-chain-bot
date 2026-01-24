@@ -20,7 +20,7 @@ reminder_task = None
 
 REMINDER_SECONDS = 120
 
-# ---------- Role Check ----------
+# ---------- Role Checks ----------
 def is_leader_member(member: discord.Member):
     return any(role.name == "Leader" for role in member.roles)
 
@@ -45,18 +45,23 @@ async def update_embed(message, guild):
 
     embed = discord.Embed(
         title="Torn Chain",
-        description="Click **Participate** to join\n\n**Queue:**\n" + ("\n".join(mentions) if mentions else "—"),
+        description="Click **Participate** to join\n\n**Queue:**\n" +
+        ("\n".join(mentions) if mentions else "—"),
         color=0x00ff00
     )
 
     await message.edit(embed=embed)
 
-# ---------- Buttons ----------
+# ---------- Persistent View ----------
 class ChainView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Participate", style=discord.ButtonStyle.green)
+    @discord.ui.button(
+        label="Participate",
+        style=discord.ButtonStyle.green,
+        custom_id="chain_participate"
+    )
     async def participate(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id not in chain:
             chain.append(interaction.user.id)
@@ -65,7 +70,11 @@ class ChainView(discord.ui.View):
         else:
             await interaction.response.send_message("You are already in the chain.", ephemeral=True)
 
-    @discord.ui.button(label="Leave", style=discord.ButtonStyle.red)
+    @discord.ui.button(
+        label="Leave",
+        style=discord.ButtonStyle.red,
+        custom_id="chain_leave"
+    )
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
         global current_index
         if interaction.user.id in chain:
@@ -78,7 +87,11 @@ class ChainView(discord.ui.View):
         else:
             await interaction.response.send_message("You are not in the chain.", ephemeral=True)
 
-    @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(
+        label="Done",
+        style=discord.ButtonStyle.blurple,
+        custom_id="chain_done"
+    )
     async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
         global current_index, reminder_task
 
@@ -104,9 +117,15 @@ class ChainView(discord.ui.View):
         if next_next:
             await interaction.channel.send(f"👀 {next_next.mention} you’re next")
 
-        reminder_task = asyncio.create_task(reminder_loop(interaction.channel, interaction.guild))
+        reminder_task = asyncio.create_task(
+            reminder_loop(interaction.channel, interaction.guild)
+        )
 
-    @discord.ui.button(label="Skip", style=discord.ButtonStyle.gray)
+    @discord.ui.button(
+        label="Skip",
+        style=discord.ButtonStyle.gray,
+        custom_id="chain_skip"
+    )
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
         global current_index, reminder_task
 
@@ -126,14 +145,23 @@ class ChainView(discord.ui.View):
         current_index = (current_index + 1) % len(chain)
         user = interaction.guild.get_member(chain[current_index])
 
-        await interaction.channel.send(f"⏭ Skipped. {user.mention} it’s now your turn!")
-        reminder_task = asyncio.create_task(reminder_loop(interaction.channel, interaction.guild))
+        await interaction.channel.send(
+            f"⏭ Skipped. {user.mention} it’s now your turn!"
+        )
+
+        reminder_task = asyncio.create_task(
+            reminder_loop(interaction.channel, interaction.guild)
+        )
 
 # ---------- Commands ----------
 @bot.command()
 @commands.check(is_leader)
 async def startchain(ctx):
     global chain, current_index, chain_active, chain_message_id, chain_view
+
+    if chain_active:
+        await ctx.send("A chain is already running.")
+        return
 
     chain.clear()
     current_index = 0
@@ -156,13 +184,16 @@ async def beginchain(ctx):
     global chain_active, reminder_task
 
     if not chain:
-        await ctx.send("No participants.")
+        await ctx.send("No participants in the chain.")
         return
 
     chain_active = True
     first = ctx.guild.get_member(chain[0])
     await ctx.send(f"🔔 {first.mention} it’s your turn!")
-    reminder_task = asyncio.create_task(reminder_loop(ctx.channel, ctx.guild))
+
+    reminder_task = asyncio.create_task(
+        reminder_loop(ctx.channel, ctx.guild)
+    )
 
 @bot.command()
 @commands.check(is_leader)
@@ -179,7 +210,10 @@ async def skip(ctx):
     current_index = (current_index + 1) % len(chain)
     user = ctx.guild.get_member(chain[current_index])
     await ctx.send(f"⏭ Skipped. {user.mention} it’s now your turn!")
-    reminder_task = asyncio.create_task(reminder_loop(ctx.channel, ctx.guild))
+
+    reminder_task = asyncio.create_task(
+        reminder_loop(ctx.channel, ctx.guild)
+    )
 
 @bot.command()
 @commands.check(is_leader)
@@ -228,10 +262,15 @@ async def showqueue(ctx):
         else:
             text += f"{user.display_name}\n"
 
-    embed = discord.Embed(title="Current Chain", description=text, color=0x00ff00)
+    embed = discord.Embed(
+        title="Current Chain",
+        description=text,
+        color=0x00ff00
+    )
+
     await ctx.send(embed=embed)
 
-# ---------- Ready / Persistence ----------
+# ---------- Persistence ----------
 @bot.event
 async def on_ready():
     global chain_view
