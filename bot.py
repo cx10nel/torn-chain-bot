@@ -148,7 +148,7 @@ class ChainView(View):
         await interaction.response.send_message("⏭️ Member skipped.", ephemeral=True)
         await notify_turn(interaction.channel)
 
-# ---------- COMMAND CHECK ----------
+# ---------- CHECK ----------
 def leader_only():
     async def predicate(ctx):
         return is_leader(ctx.author)
@@ -187,8 +187,11 @@ async def beginchain(ctx):
 @bot.command()
 @leader_only()
 async def stopchain(ctx):
-    global chain_active
+    global chain_active, chain_queue, current_index
+
     chain_active = False
+    chain_queue.clear()
+    current_index = 0
     save_state()
 
     try:
@@ -198,7 +201,7 @@ async def stopchain(ctx):
         pass
 
     await update_chain_message(ctx.guild)
-    await ctx.send("⛔ Chain stopped. Buttons removed.")
+    await ctx.send("⛔ Chain stopped and participants cleared.")
 
 @bot.command()
 @leader_only()
