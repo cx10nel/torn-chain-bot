@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import asyncio
 import time
+import os
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -141,7 +142,7 @@ async def clearchain(ctx):
     async for msg in ctx.channel.history(limit=100):
 
         if msg.author == bot.user:
-            if msg.id != chain_message.id:
+            if chain_message and msg.id != chain_message.id:
                 await msg.delete()
 
         if msg.content.startswith("!"):
@@ -153,4 +154,14 @@ async def clearchain(ctx):
     await ctx.send("Chain cleaned.")
 
 
-bot.run("YOUR_TOKEN")
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+
+if not TOKEN:
+    raise ValueError("DISCORD_TOKEN not set in Railway variables")
+
+bot.run(TOKEN)
