@@ -4,6 +4,9 @@ import asyncio
 import time
 import os
 
+# -------------------------
+# Intents and Bot Setup
+# -------------------------
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -29,7 +32,7 @@ def build_bar(time_left):
 def queue_text():
     if not queue:
         return "No one in queue yet."
-    return "\n".join([f"{i+1}. {user}" for i, user in enumerate(queue)])
+    return "\n".join([f"{i+1}. {user.name}" for i, user in enumerate(queue)])
 
 async def update_chain_message():
     global chain_message
@@ -43,7 +46,6 @@ async def update_chain_message():
         time_left = CHAIN_DURATION
 
     bar = build_bar(time_left)
-
     text = f"""
 🔥 **Chain Active**
 
@@ -53,22 +55,25 @@ async def update_chain_message():
 **Queue**
 {queue_text()}
 """
-
     try:
         await chain_message.edit(content=text)
-    except:
+    except discord.errors.NotFound:
+        # Message deleted
+        chain_message = None
+    except discord.errors.HTTPException:
+        # Sometimes happens if edit fails
         pass
 
 # -------------------------
-# Chain buttons (UI)
+# Chain Buttons (Persistent View)
 # -------------------------
 class ChainView(discord.ui.View):
     def __init__(self):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # persistent
 
     @discord.ui.button(label="Join", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user = interaction.user.name
+        user = interaction.user
         if user not in queue:
             queue.append(user)
             await update_chain_message()
@@ -78,7 +83,7 @@ class ChainView(discord.ui.View):
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.red)
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user = interaction.user.name
+        user = interaction.user
         if user in queue:
             queue.remove(user)
             await update_chain_message()
@@ -89,7 +94,7 @@ class ChainView(discord.ui.View):
     @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple)
     async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
         global chain_start
-        user = interaction.user.name
+        user = interaction.user
         if queue and queue[0] == user:
             queue.pop(0)
             chain_start = time.time()
@@ -115,6 +120,10 @@ class ChainView(discord.ui.View):
         await update_chain_message()
         await interaction.response.send_message("Queue cleared.", ephemeral=True)
 
+# Create a persistent view instance
+chain_view = ChainView()
+bot.add_view(chain_view)
+
 # -------------------------
 # Timer loop
 # -------------------------
@@ -124,34 +133,34 @@ async def timer_update():
         await update_chain_message()
 
 # -------------------------
-# Bot commands
+# Bot Commands
 # -------------------------
 @bot.command()
 async def startchain(ctx):
     global chain_message, chain_active, chain_start
     chain_active = True
     chain_start = time.time()
-    view = ChainView()
-    chain_message = await ctx.send("Starting chain...", view=view)
+
+    if not chain_message:
+        chain_message = await ctx.send("Starting chain...", view=chain_view)
     await update_chain_message()
+
     if not timer_update.is_running():
         timer_update.start()
 
 @bot.command()
-async def queue(ctx):
+async def queue_cmd(ctx):
     await ctx.send(f"**Current Queue**\n{queue_text()}")
 
 @bot.command()
-async def chainbuttons(ctx):
-    view = ChainView()
-    await ctx.send("Chain buttons refreshed:", view=view)
-
-@bot.command()
 async def clearchain(ctx):
+    global chain_message
     async for msg in ctx.channel.history(limit=100):
-        if msg.author == bot.user:
-            if chain_message and msg.id != chain_message.id:
+        if msg.author == bot.user and msg != chain_message:
+            try:
                 await msg.delete()
+            except:
+                pass
         if msg.content.startswith("!"):
             try:
                 await msg.delete()
@@ -160,7 +169,7 @@ async def clearchain(ctx):
     await ctx.send("Chain cleaned.")
 
 # -------------------------
-# Bot startup
+# Bot Startup
 # -------------------------
 @bot.event
 async def on_ready():
