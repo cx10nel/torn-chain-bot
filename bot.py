@@ -15,7 +15,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # -------------------------
 # Chain state
 # -------------------------
-queue = []
+queue = []  # store user IDs
 chain_message = None
 chain_active = False
 chain_start = None
@@ -29,10 +29,18 @@ def build_bar(time_left):
     filled = int((time_left / CHAIN_DURATION) * total)
     return "🟩" * filled + "⬜" * (total - filled)
 
-def queue_text():
+async def queue_text():
     if not queue:
         return "No one in queue yet."
-    return "\n".join([f"{i+1}. {user.name}" for i, user in enumerate(queue)])
+    # fetch members from IDs
+    lines = []
+    for i, user_id in enumerate(queue):
+        user = bot.get_user(user_id)
+        if user:
+            lines.append(f"{i+1}. {user.name}")
+        else:
+            lines.append(f"{i+1}. Unknown User")
+    return "\n".join(lines)
 
 async def update_chain_message():
     global chain_message
@@ -53,7 +61,7 @@ async def update_chain_message():
 {bar}
 
 **Queue**
-{queue_text()}
+{await queue_text()}
 """
     try:
         await chain_message.edit(content=text)
@@ -71,9 +79,9 @@ class ChainView(discord.ui.View):
 
     @discord.ui.button(label="Join", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user = interaction.user
-        if user not in queue:
-            queue.append(user)
+        user_id = interaction.user.id
+        if user_id not in queue:
+            queue.append(user_id)
             await update_chain_message()
             await interaction.response.send_message("✅ You joined the chain!", ephemeral=True)
         else:
@@ -81,9 +89,9 @@ class ChainView(discord.ui.View):
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.red)
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
-        user = interaction.user
-        if user in queue:
-            queue.remove(user)
+        user_id = interaction.user.id
+        if user_id in queue:
+            queue.remove(user_id)
             await update_chain_message()
             await interaction.response.send_message("👋 You left the chain.", ephemeral=True)
         else:
@@ -92,8 +100,8 @@ class ChainView(discord.ui.View):
     @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple)
     async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
         global chain_start
-        user = interaction.user
-        if queue and queue[0] == user:
+        user_id = interaction.user.id
+        if queue and queue[0] == user_id:
             queue.pop(0)
             chain_start = time.time()
             await update_chain_message()
@@ -142,7 +150,6 @@ async def startchain(ctx):
     chain_active = True
     chain_start = time.time()
 
-    # Send a new chain message if none exists or old one deleted
     if not chain_message:
         chain_message = await ctx.send("Starting chain...", view=chain_view)
     else:
@@ -153,13 +160,10 @@ async def startchain(ctx):
 
     await update_chain_message()
 
-    if not timer_update.is_running():
-        timer_update.start()
-
 @bot.command()
 async def queue_cmd(ctx):
     """Show the current queue."""
-    await ctx.send(f"**Current Queue**\n{queue_text()}")
+    await ctx.send(f"**Current Queue**\n{await queue_text()}")
 
 @bot.command()
 async def clearchain(ctx):
@@ -184,6 +188,8 @@ async def clearchain(ctx):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+    if not timer_update.is_running():
+        timer_update.start()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
