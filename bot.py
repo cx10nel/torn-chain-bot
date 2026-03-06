@@ -157,6 +157,23 @@ async def startchain(ctx):
     await update_chain_message()
 
 @bot.command()
+async def stopchain(ctx):
+    """Stop the chain and reset everything."""
+    global chain_active, chain_start, queue, chain_message
+
+    chain_active = False
+    chain_start = None
+    queue.clear()
+
+    if chain_message:
+        try:
+            await chain_message.edit(content="🛑 Chain has been stopped.", view=None)
+        except discord.errors.NotFound:
+            chain_message = None
+
+    await ctx.send("✅ Chain stopped and reset.")
+
+@bot.command()
 async def queue_cmd(ctx):
     """Show the current queue."""
     await ctx.send(f"**Current Queue**\n{await queue_text()}")
