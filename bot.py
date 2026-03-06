@@ -58,10 +58,8 @@ async def update_chain_message():
     try:
         await chain_message.edit(content=text)
     except discord.errors.NotFound:
-        # Message deleted
         chain_message = None
     except discord.errors.HTTPException:
-        # Sometimes happens if edit fails
         pass
 
 # -------------------------
@@ -120,7 +118,9 @@ class ChainView(discord.ui.View):
         await update_chain_message()
         await interaction.response.send_message("Queue cleared.", ephemeral=True)
 
-# Create a persistent view instance
+# -------------------------
+# Persistent View Registration
+# -------------------------
 chain_view = ChainView()
 bot.add_view(chain_view)
 
@@ -137,12 +137,20 @@ async def timer_update():
 # -------------------------
 @bot.command()
 async def startchain(ctx):
+    """Start or reset the chain."""
     global chain_message, chain_active, chain_start
     chain_active = True
     chain_start = time.time()
 
+    # Send a new chain message if none exists or old one deleted
     if not chain_message:
         chain_message = await ctx.send("Starting chain...", view=chain_view)
+    else:
+        try:
+            await chain_message.edit(content="Starting chain...", view=chain_view)
+        except discord.errors.NotFound:
+            chain_message = await ctx.send("Starting chain...", view=chain_view)
+
     await update_chain_message()
 
     if not timer_update.is_running():
@@ -150,10 +158,12 @@ async def startchain(ctx):
 
 @bot.command()
 async def queue_cmd(ctx):
+    """Show the current queue."""
     await ctx.send(f"**Current Queue**\n{queue_text()}")
 
 @bot.command()
 async def clearchain(ctx):
+    """Clear bot messages and queue."""
     global chain_message
     async for msg in ctx.channel.history(limit=100):
         if msg.author == bot.user and msg != chain_message:
