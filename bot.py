@@ -9,7 +9,6 @@ import os
 # -------------------------
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # -------------------------
@@ -78,20 +77,21 @@ class ChainView(discord.ui.View):
         user_id = interaction.user.id
         if user_id not in queue:
             queue.append(user_id)
-            await update_chain_message()
             await interaction.response.send_message("✅ You joined the chain!", ephemeral=True)
         else:
             await interaction.response.send_message("⚠️ Already in queue.", ephemeral=True)
+        # Update message asynchronously
+        asyncio.create_task(update_chain_message())
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.red, custom_id="chain_leave")
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         if user_id in queue:
             queue.remove(user_id)
-            await update_chain_message()
             await interaction.response.send_message("👋 You left the chain.", ephemeral=True)
         else:
             await interaction.response.send_message("⚠️ Not in queue.", ephemeral=True)
+        asyncio.create_task(update_chain_message())
 
     @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple, custom_id="chain_done")
     async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -100,10 +100,10 @@ class ChainView(discord.ui.View):
         if queue and queue[0] == user_id:
             queue.pop(0)
             chain_start = time.time()
-            await update_chain_message()
             await interaction.response.send_message("✅ Turn completed.", ephemeral=True)
         else:
             await interaction.response.send_message("⏳ Not your turn.", ephemeral=True)
+        asyncio.create_task(update_chain_message())
 
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.gray, custom_id="chain_skip")
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -111,16 +111,16 @@ class ChainView(discord.ui.View):
         if queue:
             queue.pop(0)
             chain_start = time.time()
-            await update_chain_message()
             await interaction.response.send_message("⏭️ Player skipped.", ephemeral=True)
         else:
             await interaction.response.send_message("⚠️ Queue empty.", ephemeral=True)
+        asyncio.create_task(update_chain_message())
 
     @discord.ui.button(label="Clear Queue", style=discord.ButtonStyle.gray, custom_id="chain_clear")
     async def clear(self, interaction: discord.Interaction, button: discord.ui.Button):
         queue.clear()
-        await update_chain_message()
         await interaction.response.send_message("Queue cleared.", ephemeral=True)
+        asyncio.create_task(update_chain_message())
 
 # -------------------------
 # Persistent View Registration
@@ -154,7 +154,7 @@ async def startchain(ctx):
         except discord.errors.NotFound:
             chain_message = await ctx.send("Starting chain...", view=chain_view)
 
-    await update_chain_message()
+    asyncio.create_task(update_chain_message())
 
 @bot.command()
 async def stopchain(ctx):
