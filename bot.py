@@ -32,7 +32,6 @@ def build_bar(time_left):
 async def queue_text():
     if not queue:
         return "No one in queue yet."
-    # fetch members from IDs
     lines = []
     for i, user_id in enumerate(queue):
         user = bot.get_user(user_id)
@@ -47,11 +46,8 @@ async def update_chain_message():
     if not chain_message:
         return
 
-    if chain_start:
-        elapsed = time.time() - chain_start
-        time_left = max(0, CHAIN_DURATION - elapsed)
-    else:
-        time_left = CHAIN_DURATION
+    time_left = CHAIN_DURATION - (time.time() - chain_start) if chain_start else CHAIN_DURATION
+    time_left = max(0, time_left)
 
     bar = build_bar(time_left)
     text = f"""
@@ -77,7 +73,7 @@ class ChainView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)  # persistent
 
-    @discord.ui.button(label="Join", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="Join", style=discord.ButtonStyle.green, custom_id="chain_join")
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         if user_id not in queue:
@@ -85,9 +81,9 @@ class ChainView(discord.ui.View):
             await update_chain_message()
             await interaction.response.send_message("✅ You joined the chain!", ephemeral=True)
         else:
-            await interaction.response.send_message("⚠️ You are already in the queue.", ephemeral=True)
+            await interaction.response.send_message("⚠️ Already in queue.", ephemeral=True)
 
-    @discord.ui.button(label="Leave", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="Leave", style=discord.ButtonStyle.red, custom_id="chain_leave")
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
         user_id = interaction.user.id
         if user_id in queue:
@@ -95,9 +91,9 @@ class ChainView(discord.ui.View):
             await update_chain_message()
             await interaction.response.send_message("👋 You left the chain.", ephemeral=True)
         else:
-            await interaction.response.send_message("⚠️ You are not in the queue.", ephemeral=True)
+            await interaction.response.send_message("⚠️ Not in queue.", ephemeral=True)
 
-    @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple, custom_id="chain_done")
     async def done(self, interaction: discord.Interaction, button: discord.ui.Button):
         global chain_start
         user_id = interaction.user.id
@@ -107,9 +103,9 @@ class ChainView(discord.ui.View):
             await update_chain_message()
             await interaction.response.send_message("✅ Turn completed.", ephemeral=True)
         else:
-            await interaction.response.send_message("⏳ It's not your turn.", ephemeral=True)
+            await interaction.response.send_message("⏳ Not your turn.", ephemeral=True)
 
-    @discord.ui.button(label="Skip", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="Skip", style=discord.ButtonStyle.gray, custom_id="chain_skip")
     async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
         global chain_start
         if queue:
@@ -120,7 +116,7 @@ class ChainView(discord.ui.View):
         else:
             await interaction.response.send_message("⚠️ Queue empty.", ephemeral=True)
 
-    @discord.ui.button(label="Clear Queue", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="Clear Queue", style=discord.ButtonStyle.gray, custom_id="chain_clear")
     async def clear(self, interaction: discord.Interaction, button: discord.ui.Button):
         queue.clear()
         await update_chain_message()
@@ -191,6 +187,9 @@ async def on_ready():
     if not timer_update.is_running():
         timer_update.start()
 
+# -------------------------
+# Run Bot
+# -------------------------
 TOKEN = os.getenv("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("DISCORD_TOKEN not set in Railway variables")
