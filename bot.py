@@ -6,7 +6,10 @@ import os
 
 # ---------- CONFIG ----------
 TOKEN = os.getenv("DISCORD_TOKEN")
-LEADER_ROLE_NAME = ["leadership", "council"]
+
+# Allowed roles (UPDATED)
+ALLOWED_ROLES = ["leadership", "council"]
+
 DATA_FILE = "chain_state.json"
 
 # ---------- INTENTS ----------
@@ -25,10 +28,13 @@ chain_channel_id = None
 
 # ---------- UTIL ----------
 def is_leader(member: discord.Member):
-    return any(
-        role.name.lower() in ALLOWED_ROLES
-        for role in member.roles
-    )
+    if not member or not hasattr(member, "roles"):
+        return False
+
+    member_roles = [role.name.lower() for role in member.roles]
+
+    return any(role in ALLOWED_ROLES for role in member_roles)
+
 
 def save_state():
     with open(DATA_FILE, "w") as f:
@@ -40,6 +46,7 @@ def save_state():
             "channel_id": chain_channel_id
         }, f)
 
+
 def load_state():
     global chain_queue, current_index, chain_active, chain_message_id, chain_channel_id
     if os.path.exists(DATA_FILE):
@@ -50,6 +57,7 @@ def load_state():
             chain_active = data.get("active", False)
             chain_message_id = data.get("message_id")
             chain_channel_id = data.get("channel_id")
+
 
 async def update_chain_message(guild: discord.Guild):
     if not chain_message_id or not chain_channel_id:
@@ -83,10 +91,12 @@ async def update_chain_message(guild: discord.Guild):
 
     await msg.edit(embed=embed)
 
+
 async def notify_turn(channel: discord.TextChannel):
     if not chain_queue:
         return
     await channel.send(f"🔔 <@{chain_queue[current_index]}> it’s your turn!")
+
 
 # ---------- BUTTON VIEW ----------
 class ChainView(View):
@@ -109,8 +119,10 @@ class ChainView(View):
         if interaction.user.id in chain_queue:
             idx = chain_queue.index(interaction.user.id)
             chain_queue.remove(interaction.user.id)
+
             if idx <= current_index and current_index > 0:
                 current_index -= 1
+
             save_state()
             await update_chain_message(interaction.guild)
             await interaction.response.send_message("👋 You left the chain.", ephemeral=True)
@@ -120,11 +132,12 @@ class ChainView(View):
     @discord.ui.button(label="Done", style=discord.ButtonStyle.blurple, custom_id="chain_done")
     async def done(self, interaction: discord.Interaction, button: Button):
         global current_index
+
         if not chain_active:
             await interaction.response.send_message("❌ Chain not active.", ephemeral=True)
             return
 
-        if chain_queue[current_index] != interaction.user.id:
+        if not chain_queue or chain_queue[current_index] != interaction.user.id:
             await interaction.response.send_message("⏳ It’s not your turn.", ephemeral=True)
             return
 
@@ -137,6 +150,7 @@ class ChainView(View):
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.red, custom_id="chain_skip")
     async def skip(self, interaction: discord.Interaction, button: Button):
         global current_index
+
         if not is_leader(interaction.user):
             await interaction.response.send_message("❌ Leaders only.", ephemeral=True)
             return
@@ -151,41 +165,52 @@ class ChainView(View):
         await interaction.response.send_message("⏭️ Member skipped.", ephemeral=True)
         await notify_turn(interaction.channel)
 
+
 # ---------- CHECK ----------
 def leader_only():
     async def predicate(ctx):
         return is_leader(ctx.author)
     return commands.check(predicate)
 
+
 # ---------- COMMANDS ----------
 @bot.command()
 @leader_only()
 async def startchain(ctx):
     global chain_message_id, chain_channel_id
+
     view = ChainView()
+
     embed = discord.Embed(
         title="🔗 Torn Chain",
         description="**Status:** ⛔ Not active\n\n**Queue:**\nNo participants yet.",
         color=discord.Color.red()
     )
+
     msg = await ctx.send(embed=embed, view=view)
     await msg.pin()
+
     chain_message_id = msg.id
     chain_channel_id = ctx.channel.id
     save_state()
+
 
 @bot.command()
 @leader_only()
 async def beginchain(ctx):
     global chain_active, current_index
+
     if not chain_queue:
         await ctx.send("⚠️ No participants.")
         return
+
     chain_active = True
     current_index = 0
     save_state()
+
     await update_chain_message(ctx.guild)
     await notify_turn(ctx.channel)
+
 
 @bot.command()
 @leader_only()
@@ -206,6 +231,7 @@ async def stopchain(ctx):
     await update_chain_message(ctx.guild)
     await ctx.send("⛔ Chain stopped and participants cleared.")
 
+
 @bot.command()
 @leader_only()
 async def showqueue(ctx):
@@ -219,6 +245,7 @@ async def showqueue(ctx):
         lines.append(f"{i+1}. <@{uid}>{marker}")
 
     await ctx.send("📜 **Current Queue:**\n" + "\n".join(lines))
+
 
 @bot.command()
 @leader_only()
@@ -237,19 +264,11 @@ async def clearchain(ctx, limit: int = 100):
     await ctx.channel.purge(limit=limit, check=check)
     await ctx.send("🧹 Chain messages cleared.", delete_after=5)
 
-# ---------- NEW COMMAND ----------
+
 @bot.command()
 @leader_only()
 async def refreshchain(ctx):
-    """Bring the chain buttons and queue to the bottom of the chat."""
     global chain_message_id, chain_channel_id
-
-    # Build the embed with current state
-    embed = discord.Embed(
-        title="🔗 Torn Chain",
-        description="",
-        color=discord.Color.green() if chain_active else discord.Color.red()
-    )
 
     if not chain_queue:
         queue_text = "No participants yet."
@@ -261,9 +280,13 @@ async def refreshchain(ctx):
         queue_text = "\n".join(lines)
 
     status = "🟢 Active" if chain_active else "⛔ Not active"
-    embed.description = f"**Status:** {status}\n\n**Queue:**\n{queue_text}"
 
-    # Send a new message at the bottom with the buttons
+    embed = discord.Embed(
+        title="🔗 Torn Chain",
+        description=f"**Status:** {status}\n\n**Queue:**\n{queue_text}",
+        color=discord.Color.green() if chain_active else discord.Color.red()
+    )
+
     msg = await ctx.send(embed=embed, view=ChainView())
     chain_message_id = msg.id
     chain_channel_id = ctx.channel.id
@@ -271,12 +294,14 @@ async def refreshchain(ctx):
 
     await ctx.send("🔄 Chain refreshed at the bottom!", delete_after=5)
 
+
 # ---------- EVENTS ----------
 @bot.event
 async def on_ready():
     load_state()
     bot.add_view(ChainView())
     print(f"Logged in as {bot.user}")
+
 
 # ---------- RUN ----------
 bot.run(TOKEN)
