@@ -6,7 +6,7 @@ import os
 
 # ---------- CONFIG ----------
 TOKEN = os.getenv("DISCORD_TOKEN")
-LEADER_ROLE_NAME = "leader"
+LEADER_ROLE_NAME = ["leadership", "council"]
 DATA_FILE = "chain_state.json"
 
 # ---------- INTENTS ----------
@@ -25,10 +25,13 @@ chain_channel_id = None
 
 # ---------- UTIL ----------
 def is_leader(member: discord.Member):
-    return any(r.name.lower() == LEADER_ROLE_NAME for r in member.roles)
+    return any(
+        role.name.lower() in ALLOWED_ROLES
+        for role in member.roles
+    )
 
 def save_state():
-    with open(DATA_FILE, "w") as f:
+    with open(DATA_FILE, "w") as f: to
         json.dump({
             "queue": chain_queue,
             "index": current_index,
