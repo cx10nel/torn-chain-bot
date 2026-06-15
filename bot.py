@@ -31,7 +31,7 @@ def is_leader(member: discord.Member):
     )
 
 def save_state():
-    with open(DATA_FILE, "w") as f: to
+    with open(DATA_FILE, "w") as f:
         json.dump({
             "queue": chain_queue,
             "index": current_index,
